@@ -1,4 +1,3 @@
-
 # | DESCRIPTION
 # | This .sh script will take care of steps described on xxxx
 # | You might update the passwords parameters defined below to meet your requirement before running this script.
@@ -12,20 +11,51 @@
 # | CONTACT
 # | luohua.HUANG@gmail.com
 
+
+
+
+chk_password() {
+if [ $1="DB" ]; then
+ appsuser=$2
+file_edition_type=`grep s_file_edition_type $CONTEXT_FILE | sed 's/^.*s_file_edition_type[^>.]*>[ ]*\([^<]*\)<.*/\1/g; s/ *$//g'`
+unpw="$appsuser/$3"
+if test "$file_edition_type" = "run"; then 
+sqlplus -s /nolog > /dev/null 2>&1 <<EOF
+whenever sqlerror exit failure
+connect $unpw
+exit success
+EOF
+
+ if [ $? -ne 0 ]; then
+   ERROR_MSG="Database connection could not be established. Either the database is down or the $2 credentials supplied are wrong."
+   printf "$ERROR_MSG \n"   
+   return 1
+ fi 
+ return 0
+ fi   
+fi;
+
+
+}
+
 # ======================================================================
 # Set Parameters
 # ======================================================================
-printf "Enter your APPS Password "
-read APPS_OLD
+#printf "Enter your APPS Password "
+#read APPS_OLD
 
-printf "Enter your SYSTEM Password "
-read SYSTEM_OLD
+#printf "Enter your SYSTEM Password "
+#read SYSTEM_OLD
 
-printf "Enter your WEBLOGIC Password "
-read WEBLOGIC_PWD
+#printf "Enter your WEBLOGIC Password "
+#read WEBLOGIC_PWD
 
-printf "Enter your new APPS Password"
-read APPS_NEW
+#printf "Enter your new APPS Password"
+#read APPS_NEW
+
+#printf "Enter your new WEBLOGIC Password"
+#read WEBLOGIC_NEW
+
 #APPS_OLD="apps"
 
 #APPS_NEW="newapps123"
@@ -45,6 +75,9 @@ FULL_HOST_NAME=`hostname -s`
 
 WORKING_DIR=`pwd`
 LOGFILE="${WORKING_DIR}/change_apps_pwd.log"
+
+change_apps_pwd () {
+
 
 # ======================================================================
 # Source db tier and update system password
@@ -204,8 +237,87 @@ printf "*********** create encryption_password.txt*********** \n"
 
 echo "" > $ey_EBSScript_HOME/encryption_password.txt
 
+
 printf "*********** initialize encryption_password.txt with NEW Passowrd *********** \n"
 java xxgl.scripts.PWDUtil ENCRYPT APPS $APPS_NEW
-java xxgl.scripts.PWDUtil ENCRYPT WEBLOGIC $WEBLOGIC_PWD
 
-printf "********* Done! ********* \n";
+}
+# ======================================================================
+# Stop mid-tier services
+# ======================================================================
+change_weblogic_pwd() {
+printf "********* Running adstpall to change weblogic_password ********* \n";
+{ echo apps; echo ${APPS_OLD}; echo ${WEBLOGIC_PWD}; } | sh adstpall.sh -skipNM -skipAdmin -nopromptmsg >> $LOGFILE;
+while ps -ef |grep `whoami`| grep -i fndlib | grep -v "grep" > /dev/null
+do
+ sleep 30
+ printf "********* Waiting for mid-tier services come down ********* \n";
+done
+
+printf "*********** Change WEBLOGIC with NEW Passowrd *********** \n"
+
+{ echo Yes; echo $CONTEXT_FILE; echo ${WEBLOGIC_PWD}; echo ${WEBLOGIC_NEW}; echo ${APPS_OLD}; } | perl $FND_TOP/patch/115/bin/txkUpdateEBSDomain.pl -action=updateAdminPassword >> $LOGFILE;
+STATUS=$?
+
+if [ $STATUS -gt 0 ];then
+ printf "********* Failed to change WEBLOGIC with NEW Passowrd ********* \n";
+ exit 1;
+fi
+
+printf "*********** initialize encryption_password.txt with NEW Passowrd *********** \n"
+java xxgl.scripts.PWDUtil ENCRYPT WEBLOGIC $WEBLOGIC_NEW
+}
+
+# ======================================================================
+# initialize
+# ======================================================================
+
+# See how we were called.
+case "$1" in
+  apps)
+       chk_result=1;
+	   
+       while [ $chk_result -gt 0 ]; do
+        printf "Enter your APPS Password \n"
+        read APPS_OLD
+		chk_password DB apps $APPS_OLD
+		chk_result=$?
+       done
+      
+       chk_result=1;
+	   while [ $chk_result -gt 0 ]; do
+       printf "Enter your SYSTEM Password \n"
+       read SYSTEM_OLD
+		chk_password DB SYSTEM $SYSTEM_OLD
+		chk_result=$?
+       done
+	   
+       printf "Enter your WEBLOGIC Password \n"
+       read WEBLOGIC_PWD
+	   
+      
+
+       printf "Enter your new APPS Password \n"
+       read APPS_NEW
+	   printf "********* Done! ********* \n"
+	   change_apps_pwd
+        ;;
+  weblogic)
+        printf "*******************change weblogic password********************************\n" 
+		printf "Enter your APPS Password \n"
+        read APPS_OLD
+		
+		printf "Enter your WEBLOGIC Password \n"
+        read WEBLOGIC_PWD
+	
+		printf "Enter your new WEBLOGIC Password \n"
+        read WEBLOGIC_NEW
+		change_weblogic_pwd
+        printf "********* Done! ********* \n"
+        ;;
+  *)
+        echo $"Usage: $0 {apps|weblogic}"
+        exit 1
+esac
+
+exit $RETVAL
