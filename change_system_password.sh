@@ -10,6 +10,8 @@
 # |
 # | CONTACT
 # | luohua.HUANG@gmail.com
+# | akuma.zhang@gmail.com 
+# | add change weblogic password scripts
 
 
 
