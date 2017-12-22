@@ -248,10 +248,15 @@ java xxgl.scripts.PWDUtil ENCRYPT APPS $APPS_NEW
 change_weblogic_pwd() {
 printf "********* Running adstpall to change weblogic_password ********* \n";
 { echo apps; echo ${APPS_OLD}; echo ${WEBLOGIC_PWD}; } | sh adstpall.sh -skipNM -skipAdmin -nopromptmsg >> $LOGFILE;
+loop_count=1;
 while ps -ef |grep `whoami`| grep -i fndlib | grep -v "grep" > /dev/null
 do
  sleep 30
  printf "********* Waiting for mid-tier services come down ********* \n";
+ let loop_count+=1
+  if [ $loop_count -gt 6 ];then
+     ps -ef |grep `whoami`| grep -i fndlib | grep -v "grep" |  awk '{print $2}' | xargs kill -9
+  fi
 done
 
 printf "*********** Change WEBLOGIC with NEW Passowrd *********** \n"
